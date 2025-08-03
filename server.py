@@ -40,33 +40,57 @@ def webhook():
             return jsonify({"status": "rejected", "reason": "Outside market hours"})
 
         data = request.get_json()
-        side = data.get("side")
-        option_type = data.get("option_type")
+        action = data.get("action")  # BUY or SELL (not used yet)
+        option_type = data.get("type")  # "CE" or "PE"
         qty = int(data.get("qty", 105))
 
         spot = kite.ltp("NSE:BANKNIFTY")["NSE:BANKNIFTY"]["last_price"]
-        symbol = get_option_symbol(spot, option_type)
+        main_symbol = get_option_symbol(spot, option_type)
+
+        # Define opposite type and symbol
+        opposite_type = "PE" if option_type == "CE" else "CE"
+        opposite_symbol = get_option_symbol(spot, opposite_type)
 
         if TEST_MODE:
-            logging.info(f"[TEST MODE] {side} {symbol} x {qty}")
-            return jsonify({"status": "test", "symbol": symbol, "qty": qty, "side": side})
+            logging.info(f"[TEST MODE] EXIT {opposite_symbol} x {qty}")
+            logging.info("[TEST MODE] Waiting 2 seconds...")
+            logging.info(f"[TEST MODE] BUY {main_symbol} x {qty}")
+            return jsonify({"status": "test", "exit": opposite_symbol, "enter": main_symbol})
 
-        order = kite.place_order(
+        # Step 1: Exit opposite leg
+        kite.place_order(
             variety=kite.VARIETY_REGULAR,
             exchange=kite.EXCHANGE_NFO,
-            tradingsymbol=symbol,
-            transaction_type=kite.TRANSACTION_TYPE_BUY if side == "BUY" else kite.TRANSACTION_TYPE_SELL,
+            tradingsymbol=opposite_symbol,
+            transaction_type=kite.TRANSACTION_TYPE_SELL,
             quantity=qty,
             order_type=kite.ORDER_TYPE_MARKET,
             product=kite.PRODUCT_MIS
         )
+        logging.info(f"✅ Exited: {opposite_symbol}")
 
-        logging.info(f"Order placed: {order}")
-        return jsonify({"status": "success", "order_id": order, "symbol": symbol})
+        # Step 2: Wait 2 seconds
+        import time
+        time.sleep(2)
+
+        # Step 3: Enter new leg
+        kite.place_order(
+            variety=kite.VARIETY_REGULAR,
+            exchange=kite.EXCHANGE_NFO,
+            tradingsymbol=main_symbol,
+            transaction_type=kite.TRANSACTION_TYPE_BUY,
+            quantity=qty,
+            order_type=kite.ORDER_TYPE_MARKET,
+            product=kite.PRODUCT_MIS
+        )
+        logging.info(f"✅ Bought: {main_symbol}")
+
+        return jsonify({"status": "success", "entered": main_symbol, "exited": opposite_symbol})
 
     except Exception as e:
         logging.error(f"Error: {e}")
         return jsonify({"status": "error", "message": str(e)})
+
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
