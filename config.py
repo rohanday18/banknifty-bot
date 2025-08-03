@@ -1,3 +1,3 @@
-ZERODHA_API_KEY = "v2zfhdexin25425q"
-ZERODHA_ACCESS_TOKEN = "LKTUMDs1ym65dDtcJ5weTIz0DxSCnUxz"
+ZERODHA_API_KEY = "your_api_key_here"
+ZERODHA_ACCESS_TOKEN = "token_placeholder"
 TEST_MODE = True
