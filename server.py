@@ -42,7 +42,7 @@ def webhook():
         data = request.get_json()
         side = data.get("side")
         option_type = data.get("option_type")
-        qty = int(data.get("qty", 35))
+        qty = int(data.get("qty", 105))
 
         spot = kite.ltp("NSE:BANKNIFTY")["NSE:BANKNIFTY"]["last_price"]
         symbol = get_option_symbol(spot, option_type)
