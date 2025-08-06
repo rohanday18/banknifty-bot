@@ -40,6 +40,7 @@ def webhook():
             return jsonify({"status": "rejected", "reason": "Outside market hours"})
 
         data = request.get_json()
+        print(f"Received webhook payload: {data}")
         action = data.get("action")  # BUY or SELL (not used yet)
         option_type = data.get("type")  # "CE" or "PE"
         qty = int(data.get("qty", 105))
