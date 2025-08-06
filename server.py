@@ -12,8 +12,10 @@ kite = KiteConnect(api_key=ZERODHA_API_KEY)
 kite.set_access_token(ZERODHA_ACCESS_TOKEN)
 
 def is_market_open():
-    now = datetime.now().time()
-    return time(9, 15) <= now <= time(15, 30)
+    now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    current_time = now.time()
+    print(f"🕒 IST Time Now: {current_time}")  # optional: to debug
+    return time(9, 15) <= current_time <= time(15, 30)
 
 def get_monthly_expiry():
     today = datetime.today()
