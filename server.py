@@ -1,6 +1,10 @@
 from flask import Flask, request, jsonify
 from kiteconnect import KiteConnect
-from config import ZERODHA_API_KEY, ZERODHA_ACCESS_TOKEN, TEST_MODE
+import os
+ZERODHA_API_KEY = os.environ.get("ZERODHA_API_KEY")
+ZERODHA_ACCESS_TOKEN = os.environ.get("ZERODHA_ACCESS_TOKEN")
+TEST_MODE = os.environ.get("TEST_MODE", "True") == "True"
+
 from datetime import datetime, time, timedelta
 import calendar
 import logging
