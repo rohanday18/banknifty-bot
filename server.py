@@ -52,10 +52,10 @@ def webhook():
         opposite_symbol = get_option_symbol(spot, opposite_type)
 
         if TEST_MODE:
-            logging.info(f"[TEST MODE] EXIT {opposite_symbol} x {qty}")
-            logging.info("[TEST MODE] Waiting 2 seconds...")
-            logging.info(f"[TEST MODE] BUY {main_symbol} x {qty}")
-            return jsonify({"status": "test", "exit": opposite_symbol, "enter": main_symbol})
+           print(f"[TEST MODE] EXIT {opposite_symbol} x {qty}")
+           print("[TEST MODE] Waiting 2 seconds...")
+           print(f"[TEST MODE] BUY {main_symbol} x {qty}")
+           return jsonify({"status": "test", "exit": opposite_symbol, "enter": main_symbol})
 
         # Step 1: Exit opposite leg
         kite.place_order(
