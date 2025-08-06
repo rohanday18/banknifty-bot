@@ -51,7 +51,7 @@ def webhook():
         option_type = data.get("type")  # "CE" or "PE"
         qty = int(data.get("qty", 105))
 
-        spot = kite.ltp("NSE:BANKNIFTY")["NSE:BANKNIFTY"]["last_price"]
+        spot = kite.ltp(["NSE:NIFTY BANK"])["NSE:NIFTY BANK"]["last_price"]
         main_symbol = get_option_symbol(spot, option_type)
 
         # Define opposite type and symbol
