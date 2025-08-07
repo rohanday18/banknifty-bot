@@ -4,7 +4,6 @@ import os
 ZERODHA_API_KEY = os.environ.get("ZERODHA_API_KEY")
 ZERODHA_ACCESS_TOKEN = os.environ.get("ZERODHA_ACCESS_TOKEN")
 TEST_MODE = os.environ.get("TEST_MODE", "True") == "True"
-
 from datetime import datetime, time, timedelta
 import calendar
 import logging
@@ -15,11 +14,22 @@ logging.basicConfig(level=logging.INFO)
 kite = KiteConnect(api_key=ZERODHA_API_KEY)
 kite.set_access_token(ZERODHA_ACCESS_TOKEN)
 
+def safe_place_order(**kwargs):
+    for attempt in range(2):  # try up to 2 times
+        try:
+            kite.place_order(**kwargs)
+            return True
+        except Exception as e:
+            print(f"⚠️ Retry attempt {attempt + 1} failed: {e}")
+            time.sleep(1)
+    raise Exception("❌ Order failed after 2 attempts")
+
 def is_market_open():
     now = datetime.utcnow() + timedelta(hours=5, minutes=30)
     current_time = now.time()
     print(f"🕒 IST Time Now: {current_time}")  # optional: to debug
     return time(9, 15) <= current_time <= time(15, 30)
+
 
 def get_monthly_expiry():
     today = datetime.today()
@@ -59,13 +69,13 @@ def webhook():
         opposite_symbol = get_option_symbol(spot, opposite_type)
 
         if TEST_MODE:
-           print(f"[TEST MODE] EXIT {opposite_symbol} x {qty}")
-           print("[TEST MODE] Waiting 2 seconds...")
-           print(f"[TEST MODE] BUY {main_symbol} x {qty}")
-           return jsonify({"status": "test", "exit": opposite_symbol, "enter": main_symbol})
+             print(f"[TEST MODE] EXIT {opposite_symbol} x {qty}")
+             print("[TEST MODE] Waiting 2 seconds...")
+             print(f"[TEST MODE] BUY {main_symbol} x {qty}")
+             return jsonify({"status": "test", "exit": opposite_symbol, "enter": main_symbol})
 
         # Step 1: Exit opposite leg
-        kite.place_order(
+        safe_place_order(
             variety=kite.VARIETY_REGULAR,
             exchange=kite.EXCHANGE_NFO,
             tradingsymbol=opposite_symbol,
@@ -81,7 +91,7 @@ def webhook():
         time.sleep(2)
 
         # Step 3: Enter new leg
-        kite.place_order(
+        safe_place_order(
             variety=kite.VARIETY_REGULAR,
             exchange=kite.EXCHANGE_NFO,
             tradingsymbol=main_symbol,
