@@ -24,6 +24,15 @@ def safe_place_order(**kwargs):
             time.sleep(1)
     raise Exception("❌ Order failed after 2 attempts")
 
+def safe_ltp(instrument):
+    for attempt in range(3):
+        try:
+            return kite.ltp([instrument])[instrument]["last_price"]
+        except Exception as e:
+            print(f"⚠️ LTP retry {attempt + 1} failed: {e}")
+            time.sleep(1)
+    raise Exception("❌ Failed to fetch LTP after 3 attempts.")
+
 def is_market_open():
     now = datetime.utcnow() + timedelta(hours=5, minutes=30)
     current_time = now.time()
@@ -61,7 +70,7 @@ def webhook():
         option_type = data.get("type")  # "CE" or "PE"
         qty = int(data.get("qty", 105))
 
-        spot = kite.ltp(["NSE:NIFTY BANK"])["NSE:NIFTY BANK"]["last_price"]
+        spot = safe_ltp("NSE:NIFTY BANK")
         main_symbol = get_option_symbol(spot, option_type)
 
         # Define opposite type and symbol
