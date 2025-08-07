@@ -72,7 +72,7 @@ def webhook():
             transaction_type=kite.TRANSACTION_TYPE_SELL,
             quantity=qty,
             order_type=kite.ORDER_TYPE_MARKET,
-            product=kite.PRODUCT_MIS
+            product=kite.PRODUCT_NRML
         )
         logging.info(f"✅ Exited: {opposite_symbol}")
 
@@ -88,7 +88,7 @@ def webhook():
             transaction_type=kite.TRANSACTION_TYPE_BUY,
             quantity=qty,
             order_type=kite.ORDER_TYPE_MARKET,
-            product=kite.PRODUCT_MIS
+            product=kite.PRODUCT_NRML
         )
         logging.info(f"✅ Bought: {main_symbol}")
 
