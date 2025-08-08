@@ -17,6 +17,9 @@ logging.basicConfig(level=logging.INFO)
 kite = KiteConnect(api_key=ZERODHA_API_KEY)
 kite.set_access_token(ZERODHA_ACCESS_TOKEN)
 
+# ---------- FAKE POSITION STORAGE FOR TEST MODE ----------
+fake_positions = []  # store tradingsymbols in TEST_MODE
+
 # ---------- SAFE FUNCTIONS ----------
 def safe_ltp(symbol):
     """Retry LTP fetch up to 2 times"""
@@ -64,6 +67,8 @@ def get_option_symbol(spot_price, option_type):
     return f"BANKNIFTY{expiry}{strike}{option_type}"
 
 def get_current_positions():
+    if TEST_MODE:
+        return [{"tradingsymbol": sym, "quantity": 1} for sym in fake_positions]
     try:
         positions = kite.positions()["net"]
         active = [p for p in positions if p["quantity"] != 0]
@@ -71,6 +76,28 @@ def get_current_positions():
     except Exception as e:
         print(f"⚠️ Could not fetch positions: {e}")
         return []
+
+# ---------- TEST MODE HELPERS ----------
+@app.route('/reset_positions', methods=['GET'])
+def reset_positions():
+    if TEST_MODE:
+        fake_positions.clear()
+        return jsonify({"status": "reset", "positions": fake_positions})
+    return jsonify({"status": "error", "reason": "Not in TEST_MODE"})
+
+@app.route('/remove_position', methods=['GET'])
+def remove_position():
+    if TEST_MODE:
+        sym = request.args.get("symbol")
+        if sym in fake_positions:
+            fake_positions.remove(sym)
+            return jsonify({"status": "removed", "symbol": sym, "positions": fake_positions})
+        return jsonify({"status": "not_found", "positions": fake_positions})
+    return jsonify({"status": "error", "reason": "Not in TEST_MODE"})
+
+@app.route('/view_positions', methods=['GET'])
+def view_positions():
+    return jsonify({"positions": fake_positions if TEST_MODE else get_current_positions()})
 
 # ---------- MAIN ROUTE ----------
 @app.route('/webhook', methods=['POST'])
@@ -95,9 +122,11 @@ def webhook():
         if not positions:
             print("🆕 No open positions → taking both CE & PE entries")
             if TEST_MODE:
+                fake_positions.append(main_symbol)
+                fake_positions.append(opposite_symbol)
                 print(f"[TEST] BUY {main_symbol} x {qty}")
                 print(f"[TEST] BUY {opposite_symbol} x {qty}")
-                return jsonify({"status": "test", "action": "both entries"})
+                return jsonify({"status": "test", "action": "both entries", "positions": fake_positions})
             safe_place_order(
                 variety=kite.VARIETY_REGULAR,
                 exchange=kite.EXCHANGE_NFO,
@@ -130,10 +159,13 @@ def webhook():
 
         # ---------- Flip positions ----------
         if TEST_MODE:
+            if opposite_symbol in fake_positions:
+                fake_positions.remove(opposite_symbol)
+            fake_positions.append(main_symbol)
             print(f"[TEST] EXIT {opposite_symbol} x {qty}")
             print("[TEST] Waiting 2 sec...")
             print(f"[TEST] BUY {main_symbol} x {qty}")
-            return jsonify({"status": "test", "flip": {"exit": opposite_symbol, "enter": main_symbol}})
+            return jsonify({"status": "test", "flip": {"exit": opposite_symbol, "enter": main_symbol}, "positions": fake_positions})
 
         safe_place_order(
             variety=kite.VARIETY_REGULAR,
