@@ -20,6 +20,11 @@ kite.set_access_token(ZERODHA_ACCESS_TOKEN)
 # ---------- FAKE POSITION STORAGE FOR TEST MODE ----------
 fake_positions = []  # store tradingsymbols in TEST_MODE
 
+def log_fake_positions():
+    """Logs the current fake positions in TEST_MODE"""
+    if TEST_MODE:
+        logging.info(f"📌 Fake positions now: {fake_positions}")
+
 # ---------- SAFE FUNCTIONS ----------
 def safe_ltp(symbol):
     """Retry LTP fetch up to 2 times"""
@@ -82,6 +87,7 @@ def get_current_positions():
 def reset_positions():
     if TEST_MODE:
         fake_positions.clear()
+        log_fake_positions()
         return jsonify({"status": "reset", "positions": fake_positions})
     return jsonify({"status": "error", "reason": "Not in TEST_MODE"})
 
@@ -91,6 +97,7 @@ def remove_position():
         sym = request.args.get("symbol")
         if sym in fake_positions:
             fake_positions.remove(sym)
+            log_fake_positions()
             return jsonify({"status": "removed", "symbol": sym, "positions": fake_positions})
         return jsonify({"status": "not_found", "positions": fake_positions})
     return jsonify({"status": "error", "reason": "Not in TEST_MODE"})
@@ -124,6 +131,7 @@ def webhook():
             if TEST_MODE:
                 fake_positions.append(main_symbol)
                 fake_positions.append(opposite_symbol)
+                log_fake_positions()
                 print(f"[TEST] BUY {main_symbol} x {qty}")
                 print(f"[TEST] BUY {opposite_symbol} x {qty}")
                 return jsonify({"status": "test", "action": "both entries", "positions": fake_positions})
@@ -162,6 +170,7 @@ def webhook():
             if opposite_symbol in fake_positions:
                 fake_positions.remove(opposite_symbol)
             fake_positions.append(main_symbol)
+            log_fake_positions()
             print(f"[TEST] EXIT {opposite_symbol} x {qty}")
             print("[TEST] Waiting 2 sec...")
             print(f"[TEST] BUY {main_symbol} x {qty}")
