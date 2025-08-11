@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify 
 from kiteconnect import KiteConnect
 import os
 from datetime import datetime, time, timedelta
@@ -23,7 +23,7 @@ fake_positions = []  # store tradingsymbols in TEST_MODE
 def log_fake_positions():
     """Logs the current fake positions in TEST_MODE"""
     if TEST_MODE:
-        logging.info(f"📌 Fake positions now: {fake_positions}")
+        logging.info(f"\ud83d\udccc Fake positions now: {fake_positions}")
 
 # ---------- SAFE FUNCTIONS ----------
 def safe_ltp(symbol):
@@ -32,9 +32,9 @@ def safe_ltp(symbol):
         try:
             return kite.ltp([symbol])[symbol]["last_price"]
         except Exception as e:
-            print(f"⚠️ LTP retry {attempt+1} failed: {e}")
+            print(f"\u26a0\ufe0f LTP retry {attempt+1} failed: {e}")
             time_module.sleep(1)
-    raise Exception("❌ LTP fetch failed after 2 attempts")
+    raise Exception("\u274c LTP fetch failed after 2 attempts")
 
 def safe_place_order(**kwargs):
     """Retry order up to 2 times"""
@@ -43,9 +43,9 @@ def safe_place_order(**kwargs):
             kite.place_order(**kwargs)
             return True
         except Exception as e:
-            print(f"⚠️ Order retry {attempt+1} failed: {e}")
+            print(f"\u26a0\ufe0f Order retry {attempt+1} failed: {e}")
             time_module.sleep(1)
-    raise Exception("❌ Order failed after 2 attempts")
+    raise Exception("\u274c Order failed after 2 attempts")
 
 # ---------- HELPER FUNCTIONS ----------
 def is_market_open():
@@ -79,7 +79,7 @@ def get_current_positions():
         active = [p for p in positions if p["quantity"] != 0]
         return active
     except Exception as e:
-        print(f"⚠️ Could not fetch positions: {e}")
+        print(f"\u26a0\ufe0f Could not fetch positions: {e}")
         return []
 
 # ---------- TEST MODE HELPERS ----------
@@ -107,14 +107,17 @@ def view_positions():
     return jsonify({"positions": fake_positions if TEST_MODE else get_current_positions()})
 
 # ---------- MAIN ROUTE ----------
+last_flip_time = None  # store last flip time globally
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    global last_flip_time
     try:
         if not is_market_open():
             return jsonify({"status": "rejected", "reason": "Outside market hours"})
 
         data = request.get_json()
-        print(f"📩 Received webhook payload: {data}")
+        print(f"\ud83d\udce9 Received webhook payload: {data}")
         option_type = data.get("type")  # "CE" or "PE"
         qty = int(data.get("qty", 105))
 
@@ -125,9 +128,14 @@ def webhook():
 
         positions = get_current_positions()
 
+        # Cooldown check — prevent flipping back within 2 seconds
+        if last_flip_time and (datetime.now() - last_flip_time).total_seconds() < 2:
+            print("\u23f3 Flip cooldown active → ignoring this alert")
+            return jsonify({"status": "skipped", "reason": "flip cooldown"})
+
         # ---------- If flat → take both CE and PE ----------
         if not positions:
-            print("🆕 No open positions → taking both CE & PE entries")
+            print("\ud83c\udd0f No open positions → taking both CE & PE entries")
             if TEST_MODE:
                 fake_positions.append(main_symbol)
                 fake_positions.append(opposite_symbol)
@@ -157,12 +165,12 @@ def webhook():
 
         # ---------- If in CE and CE Buy alert comes → skip ----------
         if any(p["tradingsymbol"].endswith("CE") and option_type == "CE" for p in positions):
-            print("⏩ Already in CE → skipping duplicate CE entry")
+            print("\u23e9 Already in CE → skipping duplicate CE entry")
             return jsonify({"status": "skipped", "reason": "Already in CE"})
 
         # ---------- If in PE and PE Buy alert comes → skip ----------
         if any(p["tradingsymbol"].endswith("PE") and option_type == "PE" for p in positions):
-            print("⏩ Already in PE → skipping duplicate PE entry")
+            print("\u23e9 Already in PE → skipping duplicate PE entry")
             return jsonify({"status": "skipped", "reason": "Already in PE"})
 
         # ---------- Flip positions ----------
@@ -171,6 +179,7 @@ def webhook():
                 fake_positions.remove(opposite_symbol)
             fake_positions.append(main_symbol)
             log_fake_positions()
+            last_flip_time = datetime.now()  # update flip time
             print(f"[TEST] EXIT {opposite_symbol} x {qty}")
             print("[TEST] Waiting 2 sec...")
             print(f"[TEST] BUY {main_symbol} x {qty}")
@@ -195,6 +204,7 @@ def webhook():
             order_type=kite.ORDER_TYPE_MARKET,
             product=kite.PRODUCT_NRML
         )
+        last_flip_time = datetime.now()  # update flip time
 
         return jsonify({"status": "success", "flip": {"exit": opposite_symbol, "enter": main_symbol}})
 
