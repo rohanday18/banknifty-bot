@@ -26,7 +26,7 @@ fake_positions = []  # store tradingsymbols in TEST_MODE
 def log_fake_positions():
     """Logs the current fake positions in TEST_MODE"""
     if TEST_MODE:
-        logging.info(f"\ud83d\udccc Fake positions now: {fake_positions}")
+        logging.info(f"📌 Fake positions now: {fake_positions}")
 
 # ---------- SAFE FUNCTIONS ----------
 def safe_ltp(symbol):
@@ -35,9 +35,9 @@ def safe_ltp(symbol):
         try:
             return kite.ltp([symbol])[symbol]["last_price"]
         except Exception as e:
-            print(f"\u26a0\ufe0f LTP retry {attempt+1} failed: {e}")
+            logging.warning(f"⚠️ LTP retry {attempt+1} failed: {e}")
             time_module.sleep(1)
-    raise Exception("\u274c LTP fetch failed after 2 attempts")
+    raise Exception("❌ LTP fetch failed after 2 attempts")
 
 def safe_place_order(**kwargs):
     """Retry order up to 2 times"""
@@ -46,9 +46,9 @@ def safe_place_order(**kwargs):
             kite.place_order(**kwargs)
             return True
         except Exception as e:
-            print(f"\u26a0\ufe0f Order retry {attempt+1} failed: {e}")
+            logging.warning(f"⚠️ Order retry {attempt+1} failed: {e}")
             time_module.sleep(1)
-    raise Exception("\u274c Order failed after 2 attempts")
+    raise Exception("❌ Order failed after 2 attempts")
 
 # ---------- HELPER FUNCTIONS ----------
 def is_market_open():
@@ -82,7 +82,7 @@ def get_current_positions():
         active = [p for p in positions if p["quantity"] != 0]
         return active
     except Exception as e:
-        print(f"\u26a0\ufe0f Could not fetch positions: {e}")
+        logging.warning(f"⚠️ Could not fetch positions: {e}")
         return []
 
 # ---------- TEST MODE HELPERS ----------
@@ -120,7 +120,7 @@ def webhook():
             return jsonify({"status": "rejected", "reason": "Outside market hours"})
 
         data = request.get_json()
-        print(f"\ud83d\udce9 Received webhook payload: {data}")
+        logging.info(f"📩 Received webhook payload: {data}")
         option_type = data.get("type")  # "CE" or "PE"
         qty = int(data.get("qty", 105))
 
@@ -131,21 +131,22 @@ def webhook():
 
         positions = get_current_positions()
 
-        # Cooldown check — prevent flipping back within 2 seconds
-        if last_flip_time and (datetime.now() - last_flip_time).total_seconds() < 2:
-            print("\u23f3 Flip cooldown active → ignoring this alert")
+        # Cooldown check — prevent flipping back within 5 seconds
+        if last_flip_time and (datetime.now() - last_flip_time).total_seconds() < 5:
+            logging.warning("⏳ Flip cooldown active → ignoring this alert")
             return jsonify({"status": "skipped", "reason": "flip cooldown"})
 
         # ---------- If flat → take both CE and PE ----------
         if not positions:
-            print("\ud83c\udd0f No open positions → taking both CE & PE entries")
+            logging.info(f"🆕 No open positions → taking both CE & PE entries (Qty: {qty})")
             if TEST_MODE:
                 fake_positions.append(main_symbol)
                 fake_positions.append(opposite_symbol)
                 log_fake_positions()
-                print(f"[TEST] BUY {main_symbol} x {qty}")
-                print(f"[TEST] BUY {opposite_symbol} x {qty}")
+                logging.info(f"[TEST] BUY {main_symbol} x {qty}")
+                logging.info(f"[TEST] BUY {opposite_symbol} x {qty}")
                 return jsonify({"status": "test", "action": "both entries", "positions": fake_positions})
+            logging.info(f"[LIVE] BUY {main_symbol} x {qty}")
             safe_place_order(
                 variety=kite.VARIETY_REGULAR,
                 exchange=kite.EXCHANGE_NFO,
@@ -155,6 +156,7 @@ def webhook():
                 order_type=kite.ORDER_TYPE_MARKET,
                 product=kite.PRODUCT_NRML
             )
+            logging.info(f"[LIVE] BUY {opposite_symbol} x {qty}")
             safe_place_order(
                 variety=kite.VARIETY_REGULAR,
                 exchange=kite.EXCHANGE_NFO,
@@ -168,26 +170,27 @@ def webhook():
 
         # ---------- If in CE and CE Buy alert comes → skip ----------
         if any(p["tradingsymbol"].endswith("CE") and option_type == "CE" for p in positions):
-            print("\u23e9 Already in CE → skipping duplicate CE entry")
+            logging.info(f"➡ Already in CE → skipping duplicate CE entry (Qty: {qty})")
             return jsonify({"status": "skipped", "reason": "Already in CE"})
 
         # ---------- If in PE and PE Buy alert comes → skip ----------
         if any(p["tradingsymbol"].endswith("PE") and option_type == "PE" for p in positions):
-            print("\u23e9 Already in PE → skipping duplicate PE entry")
+            logging.info(f"➡ Already in PE → skipping duplicate PE entry (Qty: {qty})")
             return jsonify({"status": "skipped", "reason": "Already in PE"})
 
         # ---------- Flip positions ----------
         if TEST_MODE:
+            logging.info(f"[TEST] EXIT {opposite_symbol} x {qty}")
             if opposite_symbol in fake_positions:
                 fake_positions.remove(opposite_symbol)
+            logging.info("[TEST] Waiting 2 sec...")
             fake_positions.append(main_symbol)
             log_fake_positions()
-            last_flip_time = datetime.now()  # update flip time
-            print(f"[TEST] EXIT {opposite_symbol} x {qty}")
-            print("[TEST] Waiting 2 sec...")
-            print(f"[TEST] BUY {main_symbol} x {qty}")
+            logging.info(f"[TEST] BUY {main_symbol} x {qty}")
+            last_flip_time = datetime.now()
             return jsonify({"status": "test", "flip": {"exit": opposite_symbol, "enter": main_symbol}, "positions": fake_positions})
 
+        logging.info(f"[LIVE] EXIT {opposite_symbol} x {qty}")
         safe_place_order(
             variety=kite.VARIETY_REGULAR,
             exchange=kite.EXCHANGE_NFO,
@@ -198,6 +201,7 @@ def webhook():
             product=kite.PRODUCT_NRML
         )
         time_module.sleep(2)
+        logging.info(f"[LIVE] BUY {main_symbol} x {qty}")
         safe_place_order(
             variety=kite.VARIETY_REGULAR,
             exchange=kite.EXCHANGE_NFO,
@@ -207,7 +211,7 @@ def webhook():
             order_type=kite.ORDER_TYPE_MARKET,
             product=kite.PRODUCT_NRML
         )
-        last_flip_time = datetime.now()  # update flip time
+        last_flip_time = datetime.now()
 
         return jsonify({"status": "success", "flip": {"exit": opposite_symbol, "enter": main_symbol}})
 
