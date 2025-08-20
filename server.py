@@ -17,6 +17,7 @@ logging.basicConfig(
 )
 
 # ---------- ENV VARS ----------
+DEFAULT_QTY = int(os.environ.get("DEFAULT_QTY", "35"))
 ZERODHA_API_KEY = os.environ.get("ZERODHA_API_KEY")
 ZERODHA_ACCESS_TOKEN = os.environ.get("ZERODHA_ACCESS_TOKEN")
 TEST_MODE = os.environ.get("TEST_MODE", "True") == "True"
@@ -168,7 +169,7 @@ def webhook():
             return jsonify({"status": "error", "reason": "invalid JSON", "raw": raw})
 
         option_type = data.get("type")  # "CE" or "PE"
-        qty = int(data.get("qty", 35))
+        qty = int(data.get("qty", DEFAULT_QTY))
         logging.info(f"📩 Received {option_type} Alert")
 
         spot = safe_ltp("NSE:NIFTY BANK")
