@@ -1,193 +1,175 @@
-import sys, io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
-from flask import Flask, request, jsonify 
-from kiteconnect import KiteConnect
 import os
-from datetime import datetime, time, timedelta
-import calendar
+import json
 import logging
-import time as time_module
+import time
+from flask import Flask, request, jsonify
+from kiteconnect import KiteConnect
 
-# Environment vars
-ZERODHA_API_KEY = os.environ.get("ZERODHA_API_KEY")
-ZERODHA_ACCESS_TOKEN = os.environ.get("ZERODHA_ACCESS_TOKEN")
-TEST_MODE = os.environ.get("TEST_MODE", "True") == "True"
-
+# ========================
+# Flask app
+# ========================
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
 
-kite = KiteConnect(api_key=ZERODHA_API_KEY)
-kite.set_access_token(ZERODHA_ACCESS_TOKEN)
+# ========================
+# Logging setup
+# ========================
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 
-# ---------- FAKE POSITION STORAGE FOR TEST MODE ----------
-fake_positions = []  # store tradingsymbols in TEST_MODE
+# ========================
+# Config
+# ========================
+TEST_MODE = os.environ.get("TEST_MODE", "true").lower() == "true"
+ACCESS_TOKEN = os.environ.get("ACCESS_TOKEN")
+API_KEY = os.environ.get("API_KEY")
+API_SECRET = os.environ.get("API_SECRET")
 
-def log_fake_positions():
-    if TEST_MODE:
-        logging.info(f"✅ Final positions: {fake_positions if fake_positions else 'None'}")
+kite = None
+if not TEST_MODE:
+    kite = KiteConnect(api_key=API_KEY)
+    kite.set_access_token(ACCESS_TOKEN)
 
-# ---------- SAFE FUNCTIONS ----------
-def safe_ltp(symbol):
-    for attempt in range(2):
-        try:
-            return kite.ltp([symbol])[symbol]["last_price"]
-        except Exception as e:
-            print(f"⚠️ LTP retry {attempt+1} failed: {e}")
-            time_module.sleep(1)
-    raise Exception("❌ LTP fetch failed after 2 attempts")
+# Hardcoded quantity (can later make env-based)
+QTY = int(os.environ.get("QTY", "35"))
 
-def safe_place_order(**kwargs):
-    for attempt in range(2):
-        try:
-            order_id = kite.place_order(**kwargs)
-            return order_id
-        except Exception as e:
-            print(f"⚠️ Order retry {attempt+1} failed: {e}")
-            time_module.sleep(1)
-    raise Exception("❌ Order failed after 2 attempts")
+# Track current side (CE / PE / None)
+current_position = None
 
-# ---------- HELPER FUNCTIONS ----------
-def is_market_open():
-    now = datetime.utcnow() + timedelta(hours=5, minutes=30)
-    current_time = now.time()
-    return time(9, 15) <= current_time <= time(15, 30)
 
-def get_monthly_expiry():
-    today = datetime.today()
-    year, month = today.year, today.month
-
-    def last_thursday(y, m):
-        last_day = calendar.monthrange(y, m)[1]
-        d = datetime(y, m, last_day)
-        while d.weekday() != 3:
-            d -= timedelta(days=1)
-        return d
-
-    expiry = last_thursday(year, month)
-    if (expiry - today).days < 5:  
-        if month == 12:
-            year += 1
-            month = 1
-        else:
-            month += 1
-        expiry = last_thursday(year, month)
-
-    return expiry.strftime("%y%b").upper()
-
-def get_option_symbol(spot_price, option_type):
-    step = 100
-    if option_type == "CE":
-        strike = int(spot_price / step) * step
+# ========================
+# Helpers
+# ========================
+def log_action(msg, level="info"):
+    if level == "error":
+        logging.error(msg)
     else:
-        strike = (int(spot_price / step) + 1) * step
-    expiry = get_monthly_expiry()
-    return f"BANKNIFTY{expiry}{strike}{option_type}"
+        logging.info(msg)
 
-def get_current_positions():
+
+def place_order(tradingsymbol, side, qty=QTY, retries=2):
+    """Places order with retry logic"""
+    global current_position
+
     if TEST_MODE:
-        return [{"tradingsymbol": sym, "quantity": 1} for sym in fake_positions]
+        log_action(f"[TEST] {side.upper()} {tradingsymbol} x {qty}")
+        time.sleep(1)
+        return True
+
+    for attempt in range(1, retries + 1):
+        try:
+            order_id = kite.place_order(
+                variety=kite.VARIETY_REGULAR,
+                exchange=kite.EXCHANGE_NFO,
+                tradingsymbol=tradingsymbol,
+                transaction_type=kite.TRANSACTION_TYPE_BUY if side == "BUY" else kite.TRANSACTION_TYPE_SELL,
+                quantity=qty,
+                product=kite.PRODUCT_MIS,
+                order_type=kite.ORDER_TYPE_MARKET
+            )
+            log_action(f"✅ Order success: {side} {tradingsymbol} x {qty} (ID: {order_id})")
+            return True
+        except Exception as e:
+            log_action(f"⚠️ Attempt {attempt} failed: {e}", "error")
+            time.sleep(attempt)  # wait 1s, then 2s before retry
+
+    log_action(f"❌ Order failed after {retries} attempts for {tradingsymbol}", "error")
+    return False
+
+
+def exit_position(tradingsymbol, qty=QTY):
+    """Exit current position"""
+    if TEST_MODE:
+        log_action(f"[TEST] EXIT {tradingsymbol} x {qty}")
+        time.sleep(1)
+        return True
+
     try:
-        positions = kite.positions()["net"]
-        return [p for p in positions if p["quantity"] != 0]
+        order_id = kite.place_order(
+            variety=kite.VARIETY_REGULAR,
+            exchange=kite.EXCHANGE_NFO,
+            tradingsymbol=tradingsymbol,
+            transaction_type=kite.TRANSACTION_TYPE_SELL,
+            quantity=qty,
+            product=kite.PRODUCT_MIS,
+            order_type=kite.ORDER_TYPE_MARKET
+        )
+        log_action(f"✅ Exit success: {tradingsymbol} x {qty} (ID: {order_id})")
+        return True
     except Exception as e:
-        print(f"⚠️ Could not fetch positions: {e}")
-        return []
+        log_action(f"❌ Exit failed: {e}", "error")
+        return False
 
-# ---------- MAIN ROUTE ----------
-last_flip_time = None  
 
-@app.route('/webhook', methods=['POST'])
+# ========================
+# Routes
+# ========================
+@app.route("/", methods=["GET"])
+def home():
+    """Health check route"""
+    return jsonify({"status": "running", "mode": "TEST" if TEST_MODE else "LIVE"})
+
+
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    global last_flip_time
+    """Handle alerts from TradingView"""
+    global current_position
+
+    data = request.get_json()
+    log_action(f"📩 Webhook: {data}")
+
+    if not data or "type" not in data:
+        return jsonify({"error": "Invalid payload"}), 400
+
+    signal = data["type"].upper()
+    if signal not in ["CE", "PE"]:
+        return jsonify({"error": "Invalid signal"}), 400
+
+    if current_position == signal:
+        log_action(f"🔁 Already in {signal}, skipping")
+        return jsonify({"status": "skipped"}), 200
+
+    tradingsymbol = "BANKNIFTY25AUG" + signal
+
+    if current_position and current_position != signal:
+        exit_symbol = "BANKNIFTY25AUG" + current_position
+        log_action(f"🚪 Exiting {current_position} → switching to {signal}")
+        exit_position(exit_symbol, QTY)
+
+    log_action(f"➡️ Entering {signal} → {tradingsymbol} (qty={QTY})")
+    success = place_order(tradingsymbol, "BUY", QTY)
+
+    if success:
+        current_position = signal
+
+    return jsonify({"status": "ok", "success": success}), 200
+
+
+@app.route("/view_positions", methods=["GET"])
+def view_positions():
+    """View current positions"""
+    global current_position
+
+    if TEST_MODE:
+        log_action(f"[TEST] Positions: {current_position}")
+        return jsonify({"positions": current_position})
+
     try:
-        if not is_market_open():
-            return jsonify({"status": "rejected", "reason": "Outside market hours"})
-
-        data = request.get_json(silent=True)
-        if not data:
-            raw = request.data.decode('utf-8', errors='replace')
-            print(f"⚠️ Raw webhook body (not valid JSON): {raw}")
-            return jsonify({"status": "error", "reason": "invalid JSON", "raw": raw})
-
-        action = data.get("action", "BUY")
-        option_type = data.get("type")
-        qty = int(data.get("qty", 35))
-
-        print(f"📨 Received {option_type} Alert")
-
-        spot = safe_ltp("NSE:NIFTY BANK")
-        main_symbol = get_option_symbol(spot, option_type)
-        opposite_type = "PE" if option_type == "CE" else "CE"
-        opposite_symbol = get_option_symbol(spot, opposite_type)
-
-        positions = get_current_positions()
-
-        if last_flip_time and (datetime.now() - last_flip_time).total_seconds() < 2:
-            print("⏳ Flip cooldown active → ignoring this alert")
-            return jsonify({"status": "skipped", "reason": "flip cooldown"})
-
-        # ---------- If flat ----------
-        if not positions:
-            print(f"🟦 Flat → Entering {option_type} @ {main_symbol} (qty: {qty})")
-            if TEST_MODE:
-                fake_positions.append(main_symbol)
-                log_fake_positions()
-            else:
-                safe_place_order(
-                    tradingsymbol=main_symbol,
-                    transaction_type=kite.TRANSACTION_TYPE_BUY,
-                    quantity=qty,
-                    order_type=kite.ORDER_TYPE_MARKET,
-                    product=kite.PRODUCT_NRML,
-                    exchange=kite.EXCHANGE_NFO
-                )
-                logging.info(f"✅ LIVE BUY {main_symbol} x {qty}")
-            return jsonify({"status": "success", "entry": main_symbol})
-
-        # ---------- If already in same side ----------
-        if any(p["tradingsymbol"].endswith(option_type) for p in positions):
-            print(f"⏩ Already in {option_type} → skipping duplicate entry")
-            return jsonify({"status": "skipped", "reason": f"Already in {option_type}"})
-
-        # ---------- Flip positions ----------
-        print(f"🔄 Flip → EXIT {opposite_symbol}, ENTER {main_symbol}")
-        if TEST_MODE:
-            if opposite_symbol in fake_positions:
-                fake_positions.remove(opposite_symbol)
-            fake_positions.append(main_symbol)
-            log_fake_positions()
-            last_flip_time = datetime.now()
-        else:
-            # exit opposite
-            safe_place_order(
-                tradingsymbol=opposite_symbol,
-                transaction_type=kite.TRANSACTION_TYPE_SELL,
-                quantity=qty,
-                order_type=kite.ORDER_TYPE_MARKET,
-                product=kite.PRODUCT_NRML,
-                exchange=kite.EXCHANGE_NFO
-            )
-            logging.info(f"✅ LIVE EXIT {opposite_symbol} x {qty}")
-            # enter new
-            safe_place_order(
-                tradingsymbol=main_symbol,
-                transaction_type=kite.TRANSACTION_TYPE_BUY,
-                quantity=qty,
-                order_type=kite.ORDER_TYPE_MARKET,
-                product=kite.PRODUCT_NRML,
-                exchange=kite.EXCHANGE_NFO
-            )
-            logging.info(f"✅ LIVE BUY {main_symbol} x {qty}")
-            last_flip_time = datetime.now()
-
-        return jsonify({"status": "success", "flip": {"exit": opposite_symbol, "enter": main_symbol}})
-
+        positions = kite.positions()
+        net = positions["net"]
+        active = [p for p in net if p["quantity"] != 0]
+        log_action(f"✅ Live positions: {active}")
+        return jsonify({"positions": active})
     except Exception as e:
-        logging.error(f"Error: {e}")
-        return jsonify({"status": "error", "message": str(e)})
+        log_action(f"⚠️ Fetch positions failed: {e}", "error")
+        return jsonify({"error": str(e)}), 500
 
-# ---------- START SERVER ----------
+
+# ========================
+# Main
+# ========================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
