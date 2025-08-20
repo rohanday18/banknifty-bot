@@ -51,7 +51,7 @@ def safe_ltp(symbol):
             time_module.sleep(1)
     raise Exception("❌ LTP fetch failed after 2 attempts")
 
-def place_order(symbol, qty, transaction_type="BUY"):
+def place_order(symbol, qty=DEFAULT_QTY, transaction_type="BUY"):
     """Unified order placing with retries"""
     for attempt in range(2):
         try:
@@ -71,7 +71,7 @@ def place_order(symbol, qty, transaction_type="BUY"):
             time_module.sleep(1)
     raise Exception("❌ Order failed after 2 attempts")
 
-def exit_position(symbol, qty):
+def exit_position(symbol, qty=DEFAULT_QTY):
     """Exit a position safely (opposite side order)."""
     return place_order(symbol, qty, transaction_type="SELL")
 
