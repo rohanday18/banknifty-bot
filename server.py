@@ -61,7 +61,7 @@ def place_order(symbol, qty, transaction_type="BUY"):
                 transaction_type=transaction_type,
                 quantity=qty,
                 order_type="MARKET",
-                product="MIS"
+                product="NRML"
             )
             logging.info(f"✅ Order success: {transaction_type} {symbol} x {qty}")
             return True
