@@ -196,9 +196,9 @@ def webhook():
             return jsonify({"status": "success", "entry": main_symbol})
 
         if any(p["tradingsymbol"] == main_symbol for p in positions):
-    logging.info(f"⏩ Already holding {main_symbol} → skipping duplicate entry")
-    log_positions(final=True)
-    return jsonify({"status": "skipped", "reason": f"Already in {main_symbol}"})
+            logging.info(f"⏩ Already holding {main_symbol} → skipping duplicate entry")
+            log_positions(final=True)
+            return jsonify({"status": "skipped", "reason": f"Already in {main_symbol}"})
 
         logging.info(f"🔄 Switching: Exit {opposite_type} → Enter {option_type} @ {main_symbol} (qty: {qty})")
 
