@@ -43,7 +43,7 @@ def log_positions(final=False):
 
 # ---------- SAFE FUNCTIONS ----------
 def safe_ltp(symbol):
-    for attempt in range(2):
+    for attempt in range(5):
         try:
             return kite.ltp([symbol])[symbol]["last_price"]
         except Exception as e:
@@ -53,7 +53,7 @@ def safe_ltp(symbol):
 
 def place_order(symbol, qty=DEFAULT_QTY, transaction_type="BUY"):
     """Unified order placing with retries"""
-    for attempt in range(2):
+    for attempt in range(5):
         try:
             kite.place_order(
                 variety="regular",
