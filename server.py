@@ -175,7 +175,12 @@ def webhook():
         spot = safe_ltp("NSE:NIFTY BANK")
         main_symbol = get_option_symbol(spot, option_type)
         opposite_type = "PE" if option_type == "CE" else "CE"
-        opposite_symbol = get_option_symbol(spot, opposite_type)
+        opposite_symbol = None
+        for p in positions:
+            if p["tradingsymbol"].endswith(opposite_type):
+                opposite_symbol = p["tradingsymbol"]
+                break
+ 
 
         positions = get_current_positions()
 
