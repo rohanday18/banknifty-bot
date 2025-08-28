@@ -175,6 +175,7 @@ def webhook():
         spot = safe_ltp("NSE:NIFTY BANK")
         main_symbol = get_option_symbol(spot, option_type)
         opposite_type = "PE" if option_type == "CE" else "CE"
+        positions = get_current_positions()
         opposite_symbol = None
         for p in positions:
             if p["tradingsymbol"].endswith(opposite_type):
@@ -182,7 +183,6 @@ def webhook():
                 break
  
 
-        positions = get_current_positions()
 
         if last_flip_time and (datetime.now() - last_flip_time).total_seconds() < 2:
             logging.info("⏳ Flip cooldown active → ignoring this alert")
