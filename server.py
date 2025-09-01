@@ -85,21 +85,21 @@ def get_monthly_expiry():
     today = datetime.today()
     year, month = today.year, today.month
 
-    def last_thursday(y, m):
+    def last_tuesday(y, m):
         last_day = calendar.monthrange(y, m)[1]
         d = datetime(y, m, last_day)
-        while d.weekday() != 3:
+        while d.weekday() != 1:
             d -= timedelta(days=1)
         return d
 
-    expiry = last_thursday(year, month)
+    expiry = last_tuesday(year, month)
     if (expiry - today).days < 5:  # switch to next month
         if month == 12:
             year += 1
             month = 1
         else:
             month += 1
-        expiry = last_thursday(year, month)
+        expiry = last_tuesday(year, month)
 
     return expiry.strftime("%y%b").upper()
 
